@@ -1,0 +1,240 @@
+user@pop-os:~$ wget https://raw.githubusercontent.com/elastic/examples/master/Common%20Data%20Formats/apache_logs/apache_logs -O apache_logs.txt
+user@pop-os:~$ head -n 20 apache_logs.txt
+user@pop-os:~$ awk '{
+    ip = $1;
+    gsub(/\[/, "", $4);
+    gsub(/\]/, "", $5);
+    timestamp = $4 " " $5;
+    method = $6;
+    gsub(/"/, "", method);
+    url = $7;
+    httpver = $8;
+    gsub(/"/, "", httpver);
+    status = $9;
+    size = $10;
+    print ip "," timestamp "," method "," url "," httpver "," status "," size;
+}' 
+user@pop-os:~$ head cleaned_logs.csv
+user@pop-os:~$ awk -F',' 'NF != 7 { print "Bad row:", $0 }' cleaned_logs.csv 
+user@pop-os:~$ awk -F',' 'NF == 7' cleaned_logs.csv > cleaned_logs_fixed.csv
+user@pop-os:~$ awk -F',' 'NF != 7 { print "Bad row:", $0 }' cleaned_logs.csv | wc -l
+user@pop-os:~$ wc -l cleaned_logs.csv
+user@pop-os:~$ cut -d',' -f4 cleaned_logs.csv | sort | uniq | wc -l
+user@pop-os:~$ cut -d',' -f6 cleaned_logs.csv | sort | uniq -c | sort -nr
+
+Insight #1: Top 10 IPs Accessing the Server
+user@pop-os:~$ cut -d',' -f1 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10 > top_ips.txt
+user@pop-os:~$ cat top_ips.txt
+user@pop-os:~$ sudo apt install gnuplot -y
+user@pop-os:~$ awk '{print $2, $1}' top_ips.txt > top_ips_plot.dat
+user@pop-os:~$ gnuplot
+gnuplot> set output 'top_ips.png'
+gnuplot> set title "Top 10 IP Addresses Accessing the Server"
+gnuplot> set xlabel "IP Address"
+gnuplot> set ylabel "Request Count"
+gnuplot> set style data histogram
+gnuplot> set style fill solid
+gnuplot> set boxwidth 0.5
+gnuplot> set xtics rotate by -45
+gnuplot> plot 'top_ips_plot.dat' using 2:xtic(1) title 'Requests'
+gnuplot> 
+gnuplot> exit
+user@pop-os:~$ top_ips.png
+top_ips.png: command not found
+user@pop-os:~$ xdg-open top_ips.png
+
+#2: Most Requested URLs.
+user@pop-os:~$ cut -d',' -f4 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10
+user@pop-os:~$ cut -d',' -f4 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10 > top_urls.txt
+user@pop-os:~$ awk '{print $2, $1}' top_urls.txt > top_urls_plot.dat
+user@pop-os:~$ gnuplot
+gnuplot> set output 'top_urls.png'
+gnuplot> set title "Top 10 Most Requested URLs"
+gnuplot> set xlabel "URL"
+gnuplot> set ylabel "Request Count"
+gnuplot> set style data histogram
+gnuplot> set style fill solid
+gnuplot> set boxwidth 0.7
+gnuplot> set xtics rotate by -45
+gnuplot> plot 'top_urls_plot.dat' using 2:xtic(1) title 'Requests'
+gnuplot> exit
+user@pop-os:~$ xdg-open top_urls.png
+
+#3: Distribution of HTTP Status Codes
+user@pop-os:~$ awk -F',' '{status[$6]++} END {
+  total=0;
+  for (code in status) total += status[code];
+  for (code in status)
+    printf "%s: %d (%.2f%%)\n", code, status[code], (status[code]/total)*100
+}' cleaned_logs.csv | sort -nr -k2
+user@pop-os:~$ awk -F',' '{status[$6]++} END {
+  for (code in status)
+    print code, status[code]
+}' cleaned_logs.csv | sort -nr -k2 > status_counts.dat
+user@pop-os:~$ cat > status_bar.gnu << 'EOF'
+set terminal png size 700,400
+set output 'status_codes_bar.png'
+set title "HTTP Status Code Distribution"
+set xlabel "Status Code"
+set ylabel "Count"
+set style data histograms
+set style fill solid 1.0 border -1
+set boxwidth 0.5
+set xtics rotate by -45
+plot 'status_counts.dat' using 2:xtic(1) title 'Count'
+EOF
+user@pop-os:~$ gnuplot status_bar.gnu
+user@pop-os:~$ xdg-open status_codes_bar.png
+
+#4: Top 10 URLs by number of requests
+user@pop-os:~$ cut -d',' -f4 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10
+user@pop-os:~$ cut -d',' -f4 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10 > top_urls.txt
+user@pop-os:~$ cat > top_urls.gnu << 'EOF'
+set terminal png size 800,400
+set output 'top_urls_bar.png'
+set title "Top 10 Requested URLs"
+set xlabel "URL"
+set ylabel "Request Count"
+set style data histograms
+set style fill solid 1.0 border -1
+set boxwidth 0.5
+set xtics rotate by -45
+plot 'top_urls.txt' using 1:xtic(2) title 'Requests'
+EOF
+user@pop-os:~$ gnuplot top_urls.gnu
+xdg-open top_urls_bar.png
+
+#5: Distribution of Response Sizes (Field 7)
+user@pop-os:~$ # Total count
+user@pop-os:~$ # Count total numeric entries (ignore '-')
+grep -E '^[0-9]# Count total numeric entries (ignore '-') -l
+grep -E '^[0-9]+$' <(cut -d',' -f7 cleaned_logs.csv) | wc -l
+grep -E '^[0-9]+$' <(cut -d',' -f7 cleaned_logs.csv) | sort -n | head -1
+user@pop-os:~$ grep -E '^[0-9]+$' <(cut -d',' -f7 cleaned_logs.csv) > response_sizes.txt
+user@pop-os:~$ awk '{
+  if ($1 > 0)
+    bin = int(log($1)/log(10))
+  else
+    bin = 0
+  count[bin]++
+}
+END {
+  for (i in count)
+    print i, count[i]
+}' response_sizes.txt | sort -n > response_size_bins.txt
+user@pop-os:~$ cat > response_size_hist.gnu << 'EOF'
+set terminal png size 700,400
+set output 'response_size_histogram.png'
+set title "Histogram of Response Sizes (Log10 Bins)"
+set xlabel "Log10(Response Size in Bytes)"
+set ylabel "Frequency"
+set style fill solid 1.0 border -1
+set boxwidth 0.5
+set grid ytics
+plot 'response_size_bins.txt' using 1:2 with boxes title 'Count'
+EOF
+user@pop-os:~$ gnuplot response_size_hist.gnu
+xdg-open response_size_histogram.png
+  
+#6: Requests Over Time (Time Series Analysis)
+user@pop-os:~$ cut -d',' -f2 cleaned_logs.csv | awk -F: '{print $2}' | sort | uniq -c | sort -n
+user@pop-os:~$ cut -d',' -f2 cleaned_logs.csv | awk -F: '{print $2}' | sort | uniq -c | sort -n > hourly_requests.txt
+user@pop-os:~$ cat > hourly_requests.gnu << 'EOF'
+set terminal png size 800,400
+set output 'hourly_requests.png'
+set title "Requests by Hour of Day"
+set xlabel "Hour"
+set ylabel "Number of Requests"
+set style data histograms
+set style fill solid 1.0 border -1
+set boxwidth 0.7
+set xtics rotate by 0
+plot 'hourly_requests.txt' using 1:xtic(2) title 'Requests'
+EOF
+user@pop-os:~$ gnuplot hourly_requests.gnu
+xdg-open hourly_requests.png
+ 
+#7: Count of Different HTTP Methods Used 
+user@pop-os:\~$ cut -d',' -f3 cleaned_logs.csv | sort | uniq -c | sort -nr
+user@pop-os:\~$ cut -d',' -f3 cleaned_logs.csv | sort | uniq -c | sort -nr &gt; http_methods.txt
+user@pop-os:\~$ cat &gt; http_methods.gnu ;; 'EOF'
+set terminal png size 600,400
+set output 'http_methods_bar.png'
+set title "HTTP Methods Distribution"
+set xlabel "Method"
+set ylabel "Count"
+set style data histograms
+set style fill solid 1.0 border -1
+set boxwidth 0.5
+set xtics rotate by 0
+plot 'http_methods.txt' using 1:xtic(2) title 'Requests'
+EOF
+user@pop-os:\~$ gnuplot http_methods.gnu
+xdg-open http_methods_bar.png
+
+#8: Most Frequent Status Codes per IP
+user@pop-os:\~$ head -5 top_ips.txt | awk '{print $2}' | while read ip; do
+  echo "Status codes for IP: $ip"
+  grep "^$ip," cleaned_logs.csv | cut -d',' -f6 | sort | uniq -c | sort -nr
+  echo
+done
+user@pop-os:\~$ cat &gt; status_codes_per_ip.txt ;; EOF
+user@pop-os:\~$ cat &gt; status_codes_per_ip.gnu ;; 'EOF'
+set terminal png size 800,450
+set output 'status_codes_per_ip.png'
+set title 'Status Codes Distribution for Top 5 IPs'
+set style data histogram
+set style histogram cluster gap 1
+set style fill solid border -1
+set boxwidth 0.8
+set grid ytics
+set ylabel 'Count'
+set xlabel 'IP Address'
+set xtics rotate by -45
+set key outside
+plot 'status_codes_per_ip.txt' using 2:xtic(1) title '200', \\
+     '' using 3 title '301', \\
+     '' using 4 title '304', \\
+     '' using 5 title '404', \\
+     '' using 6 title '500'
+EOF
+user@pop-os:\~$ gnuplot status_codes_per_ip.gnu
+xdg-open status_codes_per_ip.png
+
+#9: Top Requested File Extensions
+user@pop-os:\~$ cut -d',' -f8 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10
+user@pop-os:\~$ cut -d',' -f4 cleaned_logs.csv | grep -oE '\\.\[a-zA-Z0-9\]+(\\?|$)' | sed 's/\[?\]//g' | sort | uniq -c | sort -nr | head -10
+user@pop-os:\~$ cut -d',' -f4 cleaned_logs.csv | grep -oE '\\.\[a-zA-Z0-9\]+(\\?|$)' | sed 's/\[?\]//g' | sort | uniq -c | sort -nr | head -10 &gt; file_extensions.txt
+user@pop-os:\~$ cat &gt; file_extensions.gnu &lt;&lt; 'EOF'
+set terminal png size 700,400
+set output 'file_extensions_bar.png'
+set title 'Top 10 Requested File Extensions'
+set xlabel 'File Extension'
+set ylabel 'Number of Requests'
+set style data histograms
+set style fill solid 1.0 border -1
+set boxwidth 0.6
+set xtics rotate by 45
+plot 'file_extensions.txt' using 1:xtic(2) title 'Requests'
+EOF
+user@pop-os:\~$ gnuplot file_extensions.gnu
+xdg-open file_extensions_bar.png
+
+#10: Requests Distribution by Day of Week
+user@pop-os:~$ cut -d',' -f8 cleaned_logs.csv | sort | uniq -c | sort -nr | head -10
+user@pop-os:~$ cut -d',' -f3 cleaned_logs.csv | sort | uniq -c | sort -nr
+user@pop-os:~$ cut -d',' -f3 cleaned_logs.csv | sort | uniq -c | sort -nr > request_methods.txt
+user@pop-os:~$ cat > request_methods.gnu << EOF
+set terminal png size 600,400
+set output 'request_methods_bar.png'
+set title 'HTTP Request Methods Distribution'
+set style data histograms
+set style fill solid 1.0 border -1
+set boxwidth 0.5
+set xlabel 'HTTP Method'
+set ylabel 'Number of Requests'
+set xtics rotate by 45
+plot 'request_methods.txt' using 1:xtic(2) title 'Requests'
+EOF
+user@pop-os:~$ gnuplot request_methods.gnu
+xdg-open request_methods_bar.png
